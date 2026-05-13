@@ -229,7 +229,7 @@ MIT License — free to use, adapt, and deploy in your own client or internal im
 
 This library is maintained by **Praveen Solanki**, a SaaS Implementation and Automation Consultant with experience designing and delivering enterprise workflow automation across healthcare, utilities, and national services organisations. His work sits at the intersection of cloud automation, operational efficiency, and enterprise digital transformation — helping organisations extract the full value from the software platforms they have already invested in.
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Praveen%20Solanki-0077B5?logo=linkedin)](https://linkedin.com/in/praveensolanki)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Praveen%20Solanki-0077B5?logo=linkedin)](https://linkedin.com/in/solankipraveen)
 
 ---
 
