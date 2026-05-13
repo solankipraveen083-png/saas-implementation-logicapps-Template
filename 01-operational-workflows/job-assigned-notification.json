@@ -1,0 +1,220 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+
+    "triggers": {
+      "When_Job_Status_Changes_to_Assigned": {
+        "type": "Request",
+        "kind": "Http",
+        "description": "Triggered by the FSM/SaaS platform via webhook when a job status changes. The platform sends a POST request to this Logic App's HTTP endpoint with the job payload in the request body.",
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "description": "Unique identifier of the job in the FSM platform"
+              },
+              "jobStatus": {
+                "type": "string",
+                "description": "New status of the job e.g. Assigned, InProgress, Completed"
+              },
+              "workOrderId": {
+                "type": "string",
+                "description": "Work order reference number"
+              },
+              "engineerName": {
+                "type": "string",
+                "description": "Full name of the assigned engineer"
+              },
+              "engineerEmail": {
+                "type": "string",
+                "description": "Email address of the assigned engineer"
+              },
+              "customerName": {
+                "type": "string",
+                "description": "Name of the customer or client"
+              },
+              "customerEmail": {
+                "type": "string",
+                "description": "Email address of the customer"
+              },
+              "jobAddress": {
+                "type": "string",
+                "description": "Site address where the job is to be carried out"
+              },
+              "scheduledDateTime": {
+                "type": "string",
+                "description": "Scheduled date and time for the job in ISO 8601 format"
+              },
+              "jobDescription": {
+                "type": "string",
+                "description": "Brief description of the work to be carried out"
+              },
+              "priority": {
+                "type": "string",
+                "description": "Job priority level e.g. High, Medium, Low"
+              }
+            },
+            "required": ["jobId", "jobStatus", "engineerEmail", "workOrderId"]
+          }
+        }
+      }
+    },
+
+    "actions": {
+
+      "Parse_Incoming_Job_Payload": {
+        "type": "ParseJson",
+        "runAfter": {},
+        "description": "Parse the JSON body received from the FSM platform trigger to make all job fields accessible as dynamic content in subsequent steps.",
+        "inputs": {
+          "content": "@triggerBody()",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "jobId": { "type": "string" },
+              "jobStatus": { "type": "string" },
+              "workOrderId": { "type": "string" },
+              "engineerName": { "type": "string" },
+              "engineerEmail": { "type": "string" },
+              "customerName": { "type": "string" },
+              "customerEmail": { "type": "string" },
+              "jobAddress": { "type": "string" },
+              "scheduledDateTime": { "type": "string" },
+              "jobDescription": { "type": "string" },
+              "priority": { "type": "string" }
+            }
+          }
+        }
+      },
+
+      "Check_Status_Is_Assigned": {
+        "type": "If",
+        "runAfter": {
+          "Parse_Incoming_Job_Payload": ["Succeeded"]
+        },
+        "description": "Only proceed if the incoming job status is exactly Assigned. This prevents the workflow from firing on other status changes if the FSM platform sends all status events to the same webhook.",
+        "expression": {
+          "and": [
+            {
+              "equals": [
+                "@body('Parse_Incoming_Job_Payload')?['jobStatus']",
+                "Assigned"
+              ]
+            }
+          ]
+        },
+
+        "actions": {
+
+          "Send_Email_to_Engineer": {
+            "type": "ApiConnection",
+            "runAfter": {},
+            "description": "Send an email notification to the assigned engineer confirming job details, address, and scheduled time.",
+            "inputs": {
+              "host": {
+                "connection": {
+                  "name": "@parameters('$connections')['office365']['connectionId']"
+                }
+              },
+              "method": "post",
+              "path": "/v2/Mail",
+              "body": {
+                "To": "@body('Parse_Incoming_Job_Payload')?['engineerEmail']",
+                "Subject": "Job Assigned — @{body('Parse_Incoming_Job_Payload')?['workOrderId']}",
+                "Body": "<p>Hi @{body('Parse_Incoming_Job_Payload')?['engineerName']},</p><p>A new job has been assigned to you. Please review the details below.</p><table><tr><td><strong>Work Order</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['workOrderId']}</td></tr><tr><td><strong>Customer</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['customerName']}</td></tr><tr><td><strong>Address</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['jobAddress']}</td></tr><tr><td><strong>Scheduled</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['scheduledDateTime']}</td></tr><tr><td><strong>Description</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['jobDescription']}</td></tr><tr><td><strong>Priority</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['priority']}</td></tr></table><p>Please confirm receipt by logging into the platform.</p>",
+                "Importance": "High",
+                "IsHtml": true
+              }
+            }
+          },
+
+          "Send_Confirmation_Email_to_Customer": {
+            "type": "ApiConnection",
+            "runAfter": {
+              "Send_Email_to_Engineer": ["Succeeded"]
+            },
+            "description": "Send a confirmation email to the customer notifying them that an engineer has been assigned to their job and confirming the scheduled time.",
+            "inputs": {
+              "host": {
+                "connection": {
+                  "name": "@parameters('$connections')['office365']['connectionId']"
+                }
+              },
+              "method": "post",
+              "path": "/v2/Mail",
+              "body": {
+                "To": "@body('Parse_Incoming_Job_Payload')?['customerEmail']",
+                "Subject": "Engineer Assigned for Your Service Request — @{body('Parse_Incoming_Job_Payload')?['workOrderId']}",
+                "Body": "<p>Dear @{body('Parse_Incoming_Job_Payload')?['customerName']},</p><p>We are writing to confirm that an engineer has been assigned to your service request.</p><table><tr><td><strong>Reference</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['workOrderId']}</td></tr><tr><td><strong>Engineer</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['engineerName']}</td></tr><tr><td><strong>Scheduled Date and Time</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['scheduledDateTime']}</td></tr><tr><td><strong>Location</strong></td><td>@{body('Parse_Incoming_Job_Payload')?['jobAddress']}</td></tr></table><p>If you need to make any changes, please contact us as soon as possible.</p><p>Thank you for your patience.</p>",
+                "Importance": "Normal",
+                "IsHtml": true
+              }
+            }
+          },
+
+          "Update_WorkOrder_via_HTTP_POST": {
+            "type": "Http",
+            "runAfter": {
+              "Send_Confirmation_Email_to_Customer": ["Succeeded"]
+            },
+            "description": "Send an HTTP POST request back to the FSM platform API to update the work order record — logging that notifications were sent and stamping the notification timestamp on the work order.",
+            "inputs": {
+              "method": "POST",
+              "uri": "[CONFIGURE: Replace with your FSM platform's API endpoint e.g. https://your-platform.com/api/workorders/update]",
+              "headers": {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer [CONFIGURE: Replace with your API token or use a Key Vault reference]",
+                "Accept": "application/json"
+              },
+              "body": {
+                "workOrderId": "@body('Parse_Incoming_Job_Payload')?['workOrderId']",
+                "jobId": "@body('Parse_Incoming_Job_Payload')?['jobId']",
+                "notificationStatus": "Sent",
+                "notificationTimestamp": "@{utcNow()}",
+                "notificationsSentTo": [
+                  "@body('Parse_Incoming_Job_Payload')?['engineerEmail']",
+                  "@body('Parse_Incoming_Job_Payload')?['customerEmail']"
+                ],
+                "updatedBy": "LogicApp-JobAssignedNotification",
+                "notes": "Automated notifications dispatched via Azure Logic Apps on job assignment."
+              }
+            }
+          }
+
+        },
+
+        "else": {
+          "actions": {
+            "Terminate_Status_Not_Assigned": {
+              "type": "Terminate",
+              "runAfter": {},
+              "description": "If the job status is anything other than Assigned, terminate the workflow cleanly without taking any action.",
+              "inputs": {
+                "runStatus": "Cancelled"
+              }
+            }
+          }
+        }
+
+      }
+
+    },
+
+    "outputs": {}
+  },
+
+  "parameters": {
+    "$connections": {
+      "value": {
+        "office365": {
+          "connectionId": "[CONFIGURE: Replace with your Office 365 connection resource ID from Azure]",
+          "connectionName": "office365",
+          "id": "/subscriptions/[CONFIGURE: your-subscription-id]/providers/Microsoft.Web/locations/[CONFIGURE: your-region]/managedApis/office365"
+        }
+      }
+    }
+  }
+}
